@@ -1,0 +1,253 @@
+
+--common.py 
+# -*- coding:utf-8 -*-
+# Author: zww
+
+import requests
+import time
+import random
+import socket
+import http.client
+import pymysql
+import csv
+
+# 封装requests
+class Common(object):
+    def getUrlContent(self, url, data=None):
+        header = {
+             Accept :  text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8 ,
+             Accept-Encoding :  gzip, deflate, br ,
+             Accept-Language :  zh-CN,zh;q=0.9,en;q=0.8 ,
+             user-agent : "User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/62.0.3202.94 Safari/537.36",
+             cache-control :  max-age=0 
+        }  # request 的请求头
+        timeout = random.choice(range(80, 180))
+        while True:
+            try:
+                rep = requests.get(url, headers=header, timeout=timeout)  # 请求url地址，获得返回 response 信息
+                # rep.encoding =  utf-8 
+                break
+            except socket.timeout as e:  # 以下都是异常处理
+                print( 3: , e)
+                time.sleep(random.choice(range(8, 15)))
+            except socket.error as e:
+                print( 4: , e)
+                time.sleep(random.choice(range(20, 60)))
+            except http.client.BadStatusLine as e:
+                print( 5: , e)
+                time.sleep(random.choice(range(30, 80)))
+            except http.client.IncompleteRead as e:
+                print( 6: , e)
+                time.sleep(random.choice(range(5, 15)))
+        print( request success )
+        return rep.text  # 返回的 Html 全文
+
+    def writeData(self, data, url):
+        with open(url,  a , errors= ignore , newline=  ) as f:
+            f_csv = csv.writer(f)
+            f_csv.writerows(data)
+        print( write_csv success )
+
+    def queryData(self, sql):
+        db = pymysql.connect("localhost", "zww", "960128", "test")
+        cursor = db.cursor()
+        results = []
+        try:
+            cursor.execute(sql)    #执行查询语句
+            results = cursor.fetchall()
+        except Exception as e:
+            print( 查询时发生异常  + e)
+            # 如果发生错误则回滚
+            db.rollback()
+        # 关闭数据库连接
+        db.close()
+        return results
+        print( insert data success )
+
+    def insertData(self, sql):
+        # 打开数据库连接
+        db = pymysql.connect("localhost", "zww", "000000", "zwwdb")
+        # 使用 cursor() 方法创建一个游标对象 cursor
+        cursor = db.cursor()
+
+        try:
+            # sql = "INSERT INTO WEATHER(w_id, w_date, w_detail, w_temperature) VALUES (null,  %s , %s , %s )" % (data[0], data[1], data[2])
+            cursor.execute(sql)    #单条数据写入
+            # 提交到数据库执行
+            db.commit()
+        except Exception as e:
+            print( 插入时发生异常  + e)
+            # 如果发生错误则回滚
+            db.rollback()
+        # 关闭数据库连接
+        db.close()
+        print( insert data success )
+
+    def patchInsertData(self, sql, datas):
+        # 打开数据库连接
+        db = pymysql.connect("localhost", "zww", "960128", "test")
+        # 使用 cursor() 方法创建一个游标对象 cursor
+        cursor = db.cursor()
+
+        try:
+            # 批量插入数据
+            # cursor.executemany( insert into WEATHER(w_id, w_date, w_detail, w_temperature_low, w_temperature_high) value(null, %s,%s,%s,%s) ,datas)
+            cursor.executemany(sql, datas)
+
+            # 提交到数据库执行
+            db.commit()
+        except Exception as e:
+            print( 插入时发生异常  + e)
+            # 如果发生错误则回滚
+            db.rollback()
+        # 关闭数据库连接
+        db.close()
+        print( insert data success )
+
+
+
+--tmallbra.py 
+# -*- coding:utf-8 -*-
+# Author: zww
+
+from Include.commons.common import Common
+from bs4 import BeautifulSoup
+import json
+import re
+import pymysql
+
+common = Common()
+
+# 获取商品id
+def getProductIdList():
+    url =  https://list.tmall.com/search_product.htm?q=内衣  # q参数 是查询的关键字，这要改变一下查询值，就可以抓取任意你想知道的数据
+    html = common.getUrlContent(url)  # 获取网页信息
+    soup = BeautifulSoup(html, html.parser )
+    idList = []
+    # 用Beautiful Soup提取商品页面中所有的商品ID
+    productList = soup.find_all( div , { class :  product })
+    for product in productList:
+        idList.append(product[ data-id ])
+    return idList
+
+# 获取商品评论数据
+def getCommentDetail(itemId,currentPage):
+    url =  https://rate.tmall.com/list_detail_rate.htm?itemId=  + str(
+        itemId) +  &sellerId=2451699564&order=3&currentPage=  + str(currentPage) +  &append=0callback=jsonp336 
+    # itemId 产品id ；sellerId 店铺id 字段必须有值，但随意值就行
+    html = common.getUrlContent(url)  # 获取网页信息
+    # 删掉返回的多余信息
+    html = html.replace( jsonp128( ,  ) #需要确定是不是 jsonp128
+    html = html.replace( ) ,  )
+    html = html.replace( false , "false" )
+    html = html.replace( true , "true" )
+
+    # 将string 转换为字典对象
+    tmalljson = json.loads(html)
+    return tmalljson
+
+# 获取商品评论最大页数
+def getLastPage(itemId):
+    tmalljson = getCommentDetail(itemId,1)
+    return tmalljson[ rateDetail ][ paginator ][ lastPage ] #最大页数
+
+if __name__ ==  __main__ :
+    productIdList = getProductIdList() #获取商品id
+    initial = 0
+    while initial < len(productIdList) - 30:  # 总共有60个商品，我只取了前30个
+        try:
+            itemId = productIdList[initial]
+            print( ---------- , itemId,  ------------ )
+            maxPage = getLastPage(itemId) #获取商品评论最大页数
+            num = 1
+            while num <= maxPage and num < 20: #每个商品的评论我最多取20 页，每页有20条评论，也就是每个商品最多只取 400 个评论
+                try:
+                    # 抓取某个商品的某页评论数据
+                    tmalljson = getCommentDetail(itemId, num)
+                    rateList = tmalljson[ rateDetail ][ rateList ]
+                    commentList = []
+                    n = 0
+                    while (n < len(rateList)):
+                        comment = []
+                        # 商品描述
+                        colorSize = rateList[n][ auctionSku ]
+                        m = re.split( [:;] , colorSize)
+                        rateContent = rateList[n][ rateContent ]
+                        dtime = rateList[n][ rateDate ]
+                        comment.append(m[1])
+                        comment.append(m[3])
+                        comment.append( 天猫 )
+                        comment.append(rateContent)
+                        comment.append(dtime)
+                        commentList.append(comment)
+                        n += 1
+                    print(num)
+                    sql = "insert into bras(bra_id, bra_color, bra_size, resource, comment, comment_time)  value(null, %s, %s, %s, %s, %s)"
+                    common.patchInsertData(sql, commentList) # mysql操作的批量插入
+                    num += 1
+                except Exception as e:
+                    num += 1
+                    print(e)
+                    continue
+            initial += 1
+        except Exception as e:
+            print(e)
+            
+MySql 数据库:
+
+CREATE TABLE `bra` (
+`bra_id`  int(11) NOT NULL AUTO_INCREMENT COMMENT  id  ,
+`bra_color`  varchar(25) NULL COMMENT  颜色  ,
+`bra_size`  varchar(25) NULL COMMENT  罩杯  ,
+`resource`  varchar(25) NULL COMMENT  数据来源  ,
+`comment`  varchar(500) CHARACTER SET utf8mb4 DEFAULT NULL COMMENT  评论  ,
+`comment_time`  datetime NULL COMMENT  评论时间  ,
+PRIMARY KEY (`bra_id`)
+) character set utf8
+;
+这里有两个地方需要注意， comment 评论字段需要设置编码格式为 utf8mb4  ，因为可能有表情文字。还有表需要设置为 utf8 编码，不然存不了中文。
+建好了表，就可以完整执行代码了。（这里的执行可能需要点时间，可以做成多线程的方式）。看一下执行完之后，数据库有没有数据。
+
+
+数据可视化
+数据的展示，我用了是 mycharts 模块，如果不了解的可以去学习一下http://pyecharts.org/#/zh-cn/prepare这里我就不细说了，直接贴代码看
+# encoding: utf-8
+# author zww
+
+from pyecharts import Pie
+from Include.commons.common import Common
+
+
+if __name__ ==  __main__ :
+    common = Common()
+    results = common.queryData("""select count(*) from bra where bra_size like  %A  
+            union all select count(*) from bra where bra_size like  %B  
+            union all select count(*) from bra where bra_size like  %C  
+            union all select count(*) from bra where bra_size like  %D  
+            union all select count(*) from bra where bra_size like  %E  
+            union all select count(*) from bra where bra_size like  %F  
+            union all select count(*) from bra where bra_size like  %G """)  # 获取每个罩杯数量
+    attr = ["A罩杯",  G罩杯 , "B罩杯", "C罩杯", "D罩杯", "E罩杯", "F罩杯"]
+    v1 = [results[0][0], results[6][0], results[1][0], results[2][0], results[3][0], results[4][0], results[5][0]]
+    pie = Pie("内衣罩杯", width=1300, height=620)
+    pie.add("", attr, v1, is_label_show=True)
+    pie.render( size.html )
+    print( success )
+
+    results = common.queryData("""select count(*) from bra where bra_color like  %肤%  
+        union all select count(*) from bra where bra_color like  %灰%  
+        union all select count(*) from bra where bra_color like  %黑%  
+        union all select count(*) from bra where bra_color like  %蓝%  
+        union all select count(*) from bra where bra_color like  %粉%  
+        union all select count(*) from bra where bra_color like  %红%  
+        union all select count(*) from bra where bra_color like  %紫%   
+        union all select count(*) from bra where bra_color like  %绿%  
+        union all select count(*) from bra where bra_color like  %白%  
+        union all select count(*) from bra where bra_color like  %褐%  
+        union all select count(*) from bra where bra_color like  %黄%  """)  # 获取每个罩杯数量
+    attr = ["肤色",  灰色 , "黑色", "蓝色", "粉色", "红色", "紫色",  绿色 , "白色", "褐色", "黄色"]
+    v1 = [results[0][0], results[1][0], results[2][0], results[3][0], results[4][0], results[5][0], results[6][0], results[7][0], results[8][0], results[9][0], results[10][0]]
+    pieColor = Pie("内衣颜色", width=1300, height=620)
+    pieColor.add("", attr, v1, is_label_show=True)
+    pieColor.render( color.html )
+    print( success )
