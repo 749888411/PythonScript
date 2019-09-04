@@ -1,0 +1,26 @@
+题目：   在目录xx下，有xx个普通文件，有的文件有后缀名*.txt,有的则没有后缀名，写一个脚本将xx目录下所有文件没有后缀名的文件都重命名为*.txt结尾
+
+思考：
+
+知识点：需要用到python的os模块
+
+代码：
+
+import os
+def is_file(path):  # 接收一个目录绝对路径
+    all = os.listdir(path)  # os.listdir列出目录下所有的文件，目录，隐藏文件
+    file_list = []   # 文件列表
+    updata_file_list = []  # 更改的文件列表
+    for i in all:
+        path1 = os.path.join(path, i)  # os.path.join将路径和i组合起来
+        if os.path.isfile(path1):  # os.path.isfile判断是否为文件
+            file_list.append(os.path.basename(path1))
+            fiilname, suffix = os.path.splitext(path1)  # 返回一个元组(文件路径,后缀名)
+            if not suffix:  # 后缀名不存在
+                os.chdir(path)  # 切换到path目录下
+                os.rename(i, i + '.txt')
+                updata_file_list.append(i + '.txt')
+    print('原目录里的文件(目录以排除):{}'.format(file_list))
+    print('更改后缀的文件:{}'.format(updata_file_list))
+
+is_file(r'D:\python11_quanzhan\test\123')  # 传一个目录的绝对路径
